@@ -1,0 +1,302 @@
+' The following VBA scripts customized Microsoft Excel to 
+' make it a transaction entry tool for the Quicken personal 
+' finance software program.  A customized environment was presented
+' for the user to enter financial transactions.  A menu option was added 
+' to allow the user to generate a .qif (Quicken Interchange Format) file
+' for automatic uploading of transactions in Quicken.
+
+Sub auto_open()
+addMenu
+End Sub
+Sub auto_close()
+    CommandBarName = "Worksheet Menu Bar"
+    If CommandBars(CommandBarName).Visible <> True Then
+        CommandBars(CommandBarName).Visible = True
+    End If
+
+    Set StandardMenuBar = CommandBars(CommandBarName)
+    NumberOfControls = StandardMenuBar.Controls.Count
+
+    i = 1
+    Do While i <= NumberOfControls
+    CurrentCaption = StandardMenuBar.Controls(i).Caption
+    If CurrentCaption = "&Quicken" Then
+        StandardMenuBar.Controls(i).Delete
+        NumberOfControls = NumberOfControls - 1
+    Else
+        i = i + 1
+    End If
+    Loop
+End Sub
+Sub addMenu()
+    Set newMenu = CommandBars.ActiveMenuBar.Controls.Add(Type:=msoControlPopup, Before:=9, Temporary:=True)
+    newMenu.Caption = "&Quicken"
+    
+    Set ctrl1 = newMenu.Controls.Add(Type:=msoControlButton, Id:=1)
+    ctrl1.Caption = "&Use form to enter transactions"
+    ctrl1.Style = msoButtonCaption
+    ctrl1.OnAction = "useForm"
+    
+    Set ctrl2 = newMenu.Controls.Add(Type:=msoControlButton, Id:=1)
+    ctrl2.Caption = "&Write .QIF File"
+    ctrl2.Style = msoButtonCaption
+    ctrl2.OnAction = "writeQIF"
+    
+End Sub
+Sub useForm()
+
+Form_QuickenEntry.TextBox_Date.Value = ""
+Form_QuickenEntry.TextBox_CheckNum.Value = ""
+Form_QuickenEntry.ComboBox_Payee.Value = ""
+Form_QuickenEntry.TextBox_Memo.Value = ""
+Form_QuickenEntry.ComboBox_Category.Value = ""
+Form_QuickenEntry.ComboBox_SavingsGoalAccount.Value = ""
+Form_QuickenEntry.TextBox_Amount.Value = ""
+
+Form_QuickenEntry.TextBox_Date.SetFocus
+Form_QuickenEntry.Show
+
+End Sub
+Sub recordFormData(continue)
+
+UFdate = Form_QuickenEntry.TextBox_Date.Value
+UFchecknum = Form_QuickenEntry.TextBox_CheckNum.Value
+UFpayee = Form_QuickenEntry.ComboBox_Payee.Value
+UFmemo = Form_QuickenEntry.TextBox_Memo.Value
+UFcategory = Form_QuickenEntry.ComboBox_Category.Value
+UFaccount = Form_QuickenEntry.ComboBox_Account.Value
+UFsavingsgoalaccount = Form_QuickenEntry.ComboBox_SavingsGoalAccount.Value
+UFamount = Form_QuickenEntry.TextBox_Amount.Value
+
+'data validation here
+If UFchecknum = "atm" Or UFchecknum = "Atm" Then
+    UFchecknum = "ATM"
+End If
+If UFamount = "" Then UFamount = 0
+
+'copy entered values into spreadsheet
+'find the starting place
+Range("a350").Activate
+If Range("a351").Value = "" Then
+    Range("a351").Activate
+Else
+    Selection.End(xlDown).Select
+    ActiveCell.Offset(1, 0).Select
+End If
+
+'enter the transaction
+    ActiveCell.Value = UFdate
+    ActiveCell.Offset(0, 1).Value = UFchecknum
+    ActiveCell.Offset(0, 2).Value = UFpayee
+    ActiveCell.Offset(0, 3).Value = UFmemo
+    ActiveCell.Offset(0, 4).Value = UFcategory
+    ActiveCell.Offset(0, 5).Value = UFaccount
+    ActiveCell.Offset(0, 6).Value = UFamount
+    If UFchecknum = "ATM" Then
+        ActiveCell.Offset(0, 7).Value = "ATM"
+    Else
+        ActiveCell.Offset(0, 7).Value = "Real"
+    End If
+
+'enter the balancing savings goal transaction
+If UFchecknum <> "ATM" Then
+    ActiveCell.Offset(1, 0).Select
+    ActiveCell.Value = UFdate
+    ActiveCell.Offset(0, 1).Value = ""
+    ActiveCell.Offset(0, 2).Value = "For " & UFpayee
+    ActiveCell.Offset(0, 3).Value = UFmemo
+    ActiveCell.Offset(0, 4).Value = UFsavingsgoalaccount
+    ActiveCell.Offset(0, 5).Value = "Waterhouse"
+    ActiveCell.Offset(0, 6).Value = -1 * UFamount
+    ActiveCell.Offset(0, 7).Value = "SG"
+End If
+
+If continue = 1 Then
+    useForm
+Else
+    Range("a350").Select
+End If
+
+End Sub
+Sub writeQIF()
+
+'checkZeroSum
+    Worksheets("entries").Activate
+    Range("A351").Activate
+    Count = 0
+    dateVal = ActiveCell.Offset(0, 0)
+    Amount = 0
+    NegAmount = 0
+    PosAmount = 0
+    
+    Do While dateVal <> ""
+        Amount = ActiveCell.Offset(Count, 6)
+        TransType = ActiveCell.Offset(Count, 7)
+        If TransType <> "ATM" Then
+            If Amount < 0 Then NegAmount = NegAmount + Amount
+            If Amount > 0 Then PosAmount = PosAmount + Amount
+        End If
+        Count = Count + 1
+        dateVal = ActiveCell.Offset(Count, 0)
+    Loop
+    
+    ZeroSum = NegAmount + PosAmount
+    
+    If ZeroSum <> 0 Then
+        ZeroSumResponse = MsgBox("Amounts do not sum to zero.  Do you want to check amounts?", 4, "Zero Sum Error")
+        If ZeroSumResponse = 6 Then Exit Sub
+        End If
+
+'makeNewTab
+    Set NewSheet = Worksheets.Add
+    NewSheet.Move After:=Sheets(2)
+
+    ThisYear = Year(Date)
+    ThisMonth = Month(Date)
+    If ThisMonth < 10 Then ThisMonth = "0" & ThisMonth
+    ThisDay = Day(Date)
+    If ThisDay < 10 Then ThisDay = "0" & ThisDay
+    ThisHour = Hour(Time)
+    If ThisHour < 10 Then ThisHour = "0" & ThisHour
+    ThisMinute = Minute(Time)
+    If ThisMinute < 10 Then ThisMinute = "0" & ThisMinute
+    ThisDate = ThisYear & ThisMonth & ThisDay & ThisHour & ThisMinute
+    newsheetname = "To " & ThisDate
+    NewSheet.Name = newsheetname
+    Range("A1").Value = "Date"
+    Range("b1").Value = "Check #"
+    Range("c1").Value = "Payee"
+    Range("d1").Value = "Memo"
+    Range("e1").Value = "Category"
+    Range("f1").Value = "Account"
+    Range("g1").Value = "Amount"
+    Range("h1").Value = "Type"
+    Range("a1", "h1").Font.Bold = True
+    
+'sortEntries
+    Worksheets("entries").Activate
+    Range("A351").Activate
+    Range("a351", "h351").Select
+    Set DataRange = ActiveSheet.Range(Selection, Selection.End(xlDown))
+    DataRange.Select
+    Selection.Sort key1:=ActiveCell.Offset(0, 5), Order1:=xlAscending, _
+                   key2:=ActiveCell.Offset(0, 4), Order2:=xlAscending, _
+                   key3:=ActiveCell.Offset(0, 2), Order3:=xlAscending, _
+                   Header:=xlNo, OrderCustom:=1, MatchCase:=False, Orientation:=xlTopToBottom
+    Selection.Copy
+
+'pasteOntoNewTab
+    Worksheets(newsheetname).Activate
+    ActiveSheet.Paste Destination:=Worksheets(newsheetname).Range("a2")
+    ActiveSheet.Columns("A:H").AutoFit
+
+'processData
+    Range("A2").Activate
+    Count = 0
+    dateVal = ActiveCell.Offset(Count, 0)
+    checkNum = ActiveCell.Offset(Count, 1)
+    Payee = ActiveCell.Offset(Count, 2)
+    Memo = ActiveCell.Offset(Count, 3)
+    Category = ActiveCell.Offset(Count, 4)
+    Account = ActiveCell.Offset(Count, 5)
+    Amount = ActiveCell.Offset(Count, 6)
+
+    LastAccount = ""
+    If Account <> "" Then AccountType = Application.WorksheetFunction.VLookup(Account, Worksheets("entries").Range("c1.d74"), 2, False)
+    FileName = "c:\" & newsheetname & ".qif"
+
+    Open FileName For Output As #1
+    
+    Print #1, "!Option:AutoSwitch"
+    Print #1, "!Option:AllXfr"
+    
+    Do While dateVal <> ""
+
+        If Account <> LastAccount Then
+            Print #1, "!Account"
+            Print #1, "N" & Account
+            Print #1, "T" & AccountType
+            Print #1, "^"
+            Print #1, "!Type:" & AccountType
+        End If
+        
+        Print #1, "D" & dateVal
+        Print #1, "N" & checkNum
+        Print #1, "P" & Payee
+        Print #1, "M" & Memo
+        Print #1, "L" & Category
+        Print #1, "T" & Amount
+        Print #1, "^"
+        
+        LastAccount = Account
+        Count = Count + 1
+        
+        dateVal = ActiveCell.Offset(Count, 0)
+        checkNum = ActiveCell.Offset(Count, 1)
+        Payee = ActiveCell.Offset(Count, 2)
+        Memo = ActiveCell.Offset(Count, 3)
+        Category = ActiveCell.Offset(Count, 4)
+        Account = ActiveCell.Offset(Count, 5)
+        If Account <> "" Then
+            AccountType = Application.WorksheetFunction.VLookup(Account, Worksheets("entries").Range("c1.d74"), 2, False)
+        End If
+        Amount = ActiveCell.Offset(Count, 6)
+    
+    Loop
+    
+   Close #1
+    
+
+'generate summary pivot table
+    make_pivot_table
+    
+'returnToEntries
+    Worksheets("entries").Activate
+    DataRange.Rows.Delete
+
+'reapplyValidationRules
+    reapplyValidationRules
+        
+'readyForNext
+    Range("A351").Select
+
+'display success message
+    MsgBox prompt:="The .QIF file has been written to:" & (Chr(13) & Chr(10) & Chr(10)) & FileName
+End Sub
+
+Sub make_pivot_table()
+        
+    Range("A1").Activate
+    Range("a1", "h1").Select
+    Set PTDataRange = Range(Selection, Selection.End(xlDown))
+    
+    ActiveSheet.PivotTableWizard SourceType:=xlDatabase, _
+                                 SourceData:=PTDataRange, _
+                                 TableDestination:=ActiveSheet.Range("j1"), _
+                                 TableName:="PivotTable1"
+    ActiveSheet.PivotTables("PivotTable1").AddFields RowFields:="Account", _
+        ColumnFields:="Type"
+    ActiveSheet.PivotTables("PivotTable1").PivotFields("Amount").Orientation = _
+        xlDataField
+End Sub
+
+Sub reapplyValidationRules()
+
+    Range("e351:f1000").Validation.Delete
+        
+    Range("f351:f1000").Validation.Add _
+        Type:=xlValidateList, _
+        AlertStyle:=xlValidAlertStop, _
+        Operator:=xlEqual, _
+        Formula1:="=$c$1:$c$73"
+    
+    Range("e351:e1000").Validation.Add _
+        Type:=xlValidateList, _
+        AlertStyle:=xlValidAlertStop, _
+        Operator:=xlEqual, _
+        Formula1:="=$f$1:$f$322"
+
+End Sub
+
+
+
